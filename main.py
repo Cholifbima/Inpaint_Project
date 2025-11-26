@@ -744,9 +744,10 @@ class MangaCleanerApp:
             # This prevents "leaking" to nearby text that wasn't selected
             refined_mask = cv2.bitwise_and(binary, roi_mask)
             
-            # Dilate slightly (1 iteration) to cover anti-aliased edges
-            kernel = np.ones((3, 3), np.uint8)
-            refined_mask = cv2.dilate(refined_mask, kernel, iterations=1)
+            # AGGRESSIVE DILATION to cover anti-aliased edges (grey fuzzy pixels)
+            # Manga text has 2-4px soft edges that Otsu misses
+            kernel = np.ones((5, 5), np.uint8)  # Larger kernel for stronger expansion
+            refined_mask = cv2.dilate(refined_mask, kernel, iterations=3)
             
             # Ensure the refined mask doesn't extend beyond original ROI bounds
             refined_mask = cv2.bitwise_and(refined_mask, roi_mask)
