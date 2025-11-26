@@ -70,7 +70,7 @@ class MangaCleanerApp:
         self.pan_start_y = 0
         
         # Inpainting state
-        self.inpainter = HybridInpainter(target_proc_size=350, patch_size=9)
+        self.inpainter = HybridInpainter(target_proc_size=600, patch_size=9)
         self.is_processing = False
         self.progress_queue = queue.Queue()
         
@@ -744,10 +744,19 @@ class MangaCleanerApp:
             # This prevents "leaking" to nearby text that wasn't selected
             refined_mask = cv2.bitwise_and(binary, roi_mask)
             
-            # AGGRESSIVE DILATION to cover anti-aliased edges (grey fuzzy pixels)
-            # Manga text has 2-4px soft edges that Otsu misses
-            kernel = np.ones((5, 5), np.uint8)  # Larger kernel for stronger expansion
-            refined_mask = cv2.dilate(refined_mask, kernel, iterations=3)
+            # AGGRESSIVE DILATION to cover anti-aliased edges + outlines + shadows
+            # Large manga text (like titles) needs stronger expansion
+            # Strategy: Two-stage dilation (detail edges + large safety margin)
+            
+            # Stage 1: Fine dilation for anti-aliased edges
+            kernel_fine = np.ones((3, 3), np.uint8)
+            refined_mask = cv2.dilate(refined_mask, kernel_fine, iterations=2)
+            
+            # Stage 2: Aggressive dilation for outlines/shadows/glow effects
+            kernel_large = np.ones((7, 7), np.uint8)  # LARGE kernel for title text
+            refined_mask = cv2.dilate(refined_mask, kernel_large, iterations=4)
+            
+            # Result: ~6-8px safety margin (catches everything!)
             
             # Ensure the refined mask doesn't extend beyond original ROI bounds
             refined_mask = cv2.bitwise_and(refined_mask, roi_mask)
