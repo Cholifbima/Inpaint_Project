@@ -70,7 +70,7 @@ class MangaCleanerApp:
         self.pan_start_y = 0
         
         # Inpainting state
-        self.inpainter = HybridInpainter(target_proc_size=600, patch_size=9)
+        self.inpainter = HybridInpainter(target_proc_size=350, patch_size=9)
         self.is_processing = False
         self.progress_queue = queue.Queue()
         
@@ -92,46 +92,47 @@ class MangaCleanerApp:
         # Title
         title_label = tk.Label(
             self.startup_frame,
-            text="🎨 Manga Text Inpainting Tool",
-            font=('Arial', 28, 'bold'),
+            text="Penghapus Teks Manga",
+            font=('Segoe UI', 32, 'bold'),
             bg='#f0f0f0',
-            fg='#333333'
+            fg='#2c3e50'
         )
-        title_label.pack(pady=(100, 20))
+        title_label.pack(pady=(120, 15))
         
         # Subtitle
         subtitle_label = tk.Label(
             self.startup_frame,
-            text="Remove text from manga images with AI-powered inpainting",
-            font=('Arial', 12),
+            text="Hapus teks dan efek suara dari gambar manga",
+            font=('Segoe UI', 11),
             bg='#f0f0f0',
-            fg='#666666'
+            fg='#7f8c8d'
         )
-        subtitle_label.pack(pady=(0, 50))
+        subtitle_label.pack(pady=(0, 60))
         
         # Upload button
         upload_btn = tk.Button(
             self.startup_frame,
-            text="📁 Upload Image",
-            font=('Arial', 16, 'bold'),
-            bg='#4CAF50',
+            text="Buka Gambar",
+            font=('Segoe UI', 13, 'bold'),
+            bg='#3498db',
             fg='white',
-            activebackground='#45a049',
+            activebackground='#2980b9',
             activeforeground='white',
-            padx=40,
-            pady=20,
+            padx=50,
+            pady=15,
             cursor='hand2',
+            relief='flat',
             command=self._upload_image
         )
-        upload_btn.pack(pady=20)
+        upload_btn.pack(pady=15)
         
         # Instructions
         instructions = tk.Label(
             self.startup_frame,
-            text="Supported formats: JPG, PNG\nMax size: 4000x4000 pixels",
-            font=('Arial', 10),
+            text="Format: JPG, PNG | Ukuran maks: 4000x4000 px",
+            font=('Segoe UI', 9),
             bg='#f0f0f0',
-            fg='#999999',
+            fg='#95a5a6',
             justify='center'
         )
         instructions.pack(pady=(10, 0))
@@ -214,10 +215,10 @@ class MangaCleanerApp:
         
         self.canvas_label = tk.Label(
             left_frame,
-            text="Draw mask over text to remove",
-            font=('Arial', 10),
+            text="Gambar mask di area yang ingin dihapus",
+            font=('Segoe UI', 10),
             bg='#ffffff',
-            fg='#666666'
+            fg='#7f8c8d'
         )
         self.canvas_label.pack(pady=5)
         
@@ -244,29 +245,30 @@ class MangaCleanerApp:
         self._update_canvas_display()
         
         # Right side: Control Panel
-        right_frame = tk.Frame(main_frame, bg='#ffffff', relief='solid', bd=1, width=300)
+        right_frame = tk.Frame(main_frame, bg='#ecf0f1', relief='flat', bd=0, width=280)
         right_frame.pack(side='right', fill='y', padx=(0, 0))
         right_frame.pack_propagate(False)
         
         # Tools label
         tools_label = tk.Label(
             right_frame,
-            text="🛠️ Tools",
-            font=('Arial', 16, 'bold'),
-            bg='#ffffff',
-            fg='#333333'
+            text="Pengaturan",
+            font=('Segoe UI', 14, 'bold'),
+            bg='#ecf0f1',
+            fg='#2c3e50'
         )
-        tools_label.pack(pady=(20, 10))
+        tools_label.pack(pady=(15, 5))
         
         # Brush size slider
-        brush_frame = tk.Frame(right_frame, bg='#ffffff')
-        brush_frame.pack(pady=10, padx=20, fill='x')
+        brush_frame = tk.Frame(right_frame, bg='#ecf0f1')
+        brush_frame.pack(pady=8, padx=15, fill='x')
         
         brush_label = tk.Label(
             brush_frame,
-            text="Brush Size:",
-            font=('Arial', 11),
-            bg='#ffffff'
+            text="Ukuran Kuas",
+            font=('Segoe UI', 10),
+            bg='#ecf0f1',
+            fg='#34495e'
         )
         brush_label.pack(anchor='w')
         
@@ -284,9 +286,9 @@ class MangaCleanerApp:
         self.brush_size_label = tk.Label(
             brush_frame,
             text="15 px",
-            font=('Arial', 9),
-            bg='#ffffff',
-            fg='#666666'
+            font=('Segoe UI', 9),
+            bg='#ecf0f1',
+            fg='#7f8c8d'
         )
         self.brush_size_label.pack(anchor='e')
         
@@ -294,239 +296,252 @@ class MangaCleanerApp:
         self.auto_snap_var = tk.BooleanVar(value=True)
         self.auto_snap_check = tk.Checkbutton(
             brush_frame,
-            text="🎯 Auto-Snap Mask (Smart Segmentation)",
+            text="Deteksi Otomatis",
             variable=self.auto_snap_var,
-            font=('Arial', 10),
-            bg='#ffffff',
-            activebackground='#ffffff',
+            font=('Segoe UI', 9),
+            bg='#ecf0f1',
+            activebackground='#ecf0f1',
+            fg='#34495e',
             command=self._on_auto_snap_toggle
         )
-        self.auto_snap_check.pack(anchor='w', pady=(10, 0))
+        self.auto_snap_check.pack(anchor='w', pady=(8, 0))
         
         auto_snap_hint = tk.Label(
             brush_frame,
-            text="Automatically snaps to black text edges",
-            font=('Arial', 8, 'italic'),
-            bg='#ffffff',
-            fg='#888888'
+            text="Otomatis rapi saat lepas mouse",
+            font=('Segoe UI', 8),
+            bg='#ecf0f1',
+            fg='#95a5a6'
         )
         auto_snap_hint.pack(anchor='w', pady=(2, 0))
         
         # Separator
-        ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=15, padx=20)
+        ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=12, padx=15)
         
         # Undo/Redo buttons
-        history_frame = tk.Frame(right_frame, bg='#ffffff')
-        history_frame.pack(pady=10, padx=20, fill='x')
+        history_frame = tk.Frame(right_frame, bg='#ecf0f1')
+        history_frame.pack(pady=8, padx=15, fill='x')
         
         self.undo_btn = tk.Button(
             history_frame,
-            text="↶ Undo",
-            font=('Arial', 10),
-            bg='#9E9E9E',
+            text="Urungkan",
+            font=('Segoe UI', 9),
+            bg='#95a5a6',
             fg='white',
-            activebackground='#757575',
+            activebackground='#7f8c8d',
             activeforeground='white',
             padx=10,
-            pady=5,
+            pady=6,
             cursor='hand2',
+            relief='flat',
             command=self._undo,
             state='disabled'
         )
-        self.undo_btn.pack(side='left', expand=True, fill='x', padx=(0, 5))
+        self.undo_btn.pack(side='left', expand=True, fill='x', padx=(0, 4))
         
         self.redo_btn = tk.Button(
             history_frame,
-            text="↷ Redo",
-            font=('Arial', 10),
-            bg='#9E9E9E',
+            text="Ulangi",
+            font=('Segoe UI', 9),
+            bg='#95a5a6',
             fg='white',
-            activebackground='#757575',
+            activebackground='#7f8c8d',
             activeforeground='white',
             padx=10,
-            pady=5,
+            pady=6,
             cursor='hand2',
+            relief='flat',
             command=self._redo,
             state='disabled'
         )
-        self.redo_btn.pack(side='right', expand=True, fill='x', padx=(5, 0))
+        self.redo_btn.pack(side='right', expand=True, fill='x', padx=(4, 0))
         
         # Separator
-        ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=15, padx=20)
+        ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=12, padx=15)
         
         # Zoom controls
         zoom_label = tk.Label(
             right_frame,
-            text="🔍 Zoom:",
-            font=('Arial', 11, 'bold'),
-            bg='#ffffff'
+            text="Zoom",
+            font=('Segoe UI', 10),
+            bg='#ecf0f1',
+            fg='#34495e'
         )
-        zoom_label.pack(pady=(0, 5), padx=20, anchor='w')
+        zoom_label.pack(pady=(0, 5), padx=15, anchor='w')
         
-        zoom_frame = tk.Frame(right_frame, bg='#ffffff')
-        zoom_frame.pack(pady=5, padx=20, fill='x')
+        zoom_frame = tk.Frame(right_frame, bg='#ecf0f1')
+        zoom_frame.pack(pady=5, padx=15, fill='x')
         
         zoom_out_btn = tk.Button(
             zoom_frame,
             text="−",
-            font=('Arial', 14, 'bold'),
-            bg='#607D8B',
+            font=('Segoe UI', 12, 'bold'),
+            bg='#95a5a6',
             fg='white',
-            activebackground='#455A64',
+            activebackground='#7f8c8d',
             activeforeground='white',
-            width=3,
+            width=2,
             cursor='hand2',
+            relief='flat',
             command=self._zoom_out
         )
-        zoom_out_btn.pack(side='left', padx=(0, 5))
+        zoom_out_btn.pack(side='left', padx=(0, 4))
         
         self.zoom_label = tk.Label(
             zoom_frame,
             text="100%",
-            font=('Arial', 11),
-            bg='#ffffff',
+            font=('Segoe UI', 10),
+            bg='#ecf0f1',
+            fg='#34495e',
             width=8
         )
-        self.zoom_label.pack(side='left', padx=5)
+        self.zoom_label.pack(side='left', padx=4)
         
         zoom_in_btn = tk.Button(
             zoom_frame,
             text="+",
-            font=('Arial', 14, 'bold'),
-            bg='#607D8B',
+            font=('Segoe UI', 12, 'bold'),
+            bg='#95a5a6',
             fg='white',
-            activebackground='#455A64',
+            activebackground='#7f8c8d',
             activeforeground='white',
-            width=3,
+            width=2,
             cursor='hand2',
+            relief='flat',
             command=self._zoom_in
         )
-        zoom_in_btn.pack(side='left', padx=(5, 0))
+        zoom_in_btn.pack(side='left', padx=(4, 0))
         
         zoom_reset_btn = tk.Button(
             zoom_frame,
             text="Reset",
-            font=('Arial', 9),
-            bg='#78909C',
+            font=('Segoe UI', 8),
+            bg='#bdc3c7',
             fg='white',
-            activebackground='#546E7A',
+            activebackground='#95a5a6',
             activeforeground='white',
             cursor='hand2',
+            relief='flat',
             command=self._zoom_reset
         )
         zoom_reset_btn.pack(side='right')
         
         zoom_info = tk.Label(
             right_frame,
-            text="Tip: Hold Shift + Drag to pan",
-            font=('Arial', 8),
-            bg='#ffffff',
-            fg='#999999'
+            text="Shift + Drag untuk geser gambar",
+            font=('Segoe UI', 8),
+            bg='#ecf0f1',
+            fg='#95a5a6'
         )
-        zoom_info.pack(pady=(2, 0), padx=20, anchor='w')
+        zoom_info.pack(pady=(2, 0), padx=15, anchor='w')
         
         # Separator
-        ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=15, padx=20)
+        ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=12, padx=15)
         
         # Run Inpainting button
         self.run_btn = tk.Button(
             right_frame,
-            text="▶ Run Inpainting",
-            font=('Arial', 12, 'bold'),
-            bg='#2196F3',
+            text="Proses",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#3498db',
             fg='white',
-            activebackground='#1976D2',
+            activebackground='#2980b9',
             activeforeground='white',
             padx=20,
             pady=10,
             cursor='hand2',
+            relief='flat',
             command=self._run_inpainting
         )
-        self.run_btn.pack(pady=10, padx=20, fill='x')
+        self.run_btn.pack(pady=8, padx=15, fill='x')
         
         # Clear Mask button
         clear_btn = tk.Button(
             right_frame,
-            text="🗑️ Clear Mask",
-            font=('Arial', 11),
-            bg='#FF9800',
+            text="Hapus Mask",
+            font=('Segoe UI', 10),
+            bg='#5dade2',
             fg='white',
-            activebackground='#F57C00',
+            activebackground='#3498db',
             activeforeground='white',
             padx=20,
             pady=8,
             cursor='hand2',
+            relief='flat',
             command=self._clear_mask
         )
-        clear_btn.pack(pady=5, padx=20, fill='x')
+        clear_btn.pack(pady=4, padx=15, fill='x')
         
         # Toggle Before/After button
         self.toggle_btn = tk.Button(
             right_frame,
-            text="👁️ View Result",
-            font=('Arial', 11),
-            bg='#9C27B0',
+            text="Lihat Hasil",
+            font=('Segoe UI', 10),
+            bg='#85c1e9',
             fg='white',
-            activebackground='#7B1FA2',
+            activebackground='#5dade2',
             activeforeground='white',
             padx=20,
             pady=8,
             cursor='hand2',
+            relief='flat',
             command=self._toggle_view,
             state='disabled'
         )
-        self.toggle_btn.pack(pady=5, padx=20, fill='x')
+        self.toggle_btn.pack(pady=4, padx=15, fill='x')
         
         # Save Image button
         self.save_btn = tk.Button(
             right_frame,
-            text="💾 Save Result",
-            font=('Arial', 11),
-            bg='#4CAF50',
+            text="Simpan Hasil",
+            font=('Segoe UI', 10),
+            bg='#85c1e9',
             fg='white',
-            activebackground='#45a049',
+            activebackground='#5dade2',
             activeforeground='white',
             padx=20,
             pady=8,
             cursor='hand2',
+            relief='flat',
             command=self._save_image,
             state='disabled'
         )
-        self.save_btn.pack(pady=5, padx=20, fill='x')
+        self.save_btn.pack(pady=4, padx=15, fill='x')
         
         # New Image button
         new_btn = tk.Button(
             right_frame,
-            text="📁 New Image",
-            font=('Arial', 11),
-            bg='#9E9E9E',
+            text="Gambar Baru",
+            font=('Segoe UI', 10),
+            bg='#95a5a6',
             fg='white',
-            activebackground='#757575',
+            activebackground='#7f8c8d',
             activeforeground='white',
             padx=20,
             pady=8,
             cursor='hand2',
+            relief='flat',
             command=self._new_image
         )
-        new_btn.pack(pady=5, padx=20, fill='x')
+        new_btn.pack(pady=4, padx=15, fill='x')
         
         # Separator
-        ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=15, padx=20)
+        ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=12, padx=15)
         
         # Info
         info_label = tk.Label(
             right_frame,
-            text="ℹ️ Instructions:\n\n"
-                 "1. Draw red mask over text\n"
-                 "2. Click 'Run Inpainting'\n"
-                 "3. Wait for processing\n"
-                 "4. Save the result!",
-            font=('Arial', 9),
-            bg='#ffffff',
-            fg='#666666',
+            text="Cara Pakai:\n\n"
+                 "1. Gambar mask merah di teks\n"
+                 "2. Klik Proses\n"
+                 "3. Tunggu selesai\n"
+                 "4. Simpan hasil",
+            font=('Segoe UI', 9),
+            bg='#ecf0f1',
+            fg='#7f8c8d',
             justify='left'
         )
-        info_label.pack(pady=20, padx=20)
+        info_label.pack(pady=15, padx=15)
         
         # Bottom: Progress bar and status
         bottom_frame = tk.Frame(self.root, bg='#f0f0f0')
@@ -541,10 +556,10 @@ class MangaCleanerApp:
         
         self.status_label = tk.Label(
             bottom_frame,
-            text="Ready. Draw mask to begin.",
-            font=('Arial', 10),
+            text="Siap. Gambar mask untuk mulai.",
+            font=('Segoe UI', 10),
             bg='#f0f0f0',
-            fg='#333333'
+            fg='#2c3e50'
         )
         self.status_label.pack(side='left')
     
@@ -744,19 +759,10 @@ class MangaCleanerApp:
             # This prevents "leaking" to nearby text that wasn't selected
             refined_mask = cv2.bitwise_and(binary, roi_mask)
             
-            # AGGRESSIVE DILATION to cover anti-aliased edges + outlines + shadows
-            # Large manga text (like titles) needs stronger expansion
-            # Strategy: Two-stage dilation (detail edges + large safety margin)
-            
-            # Stage 1: Fine dilation for anti-aliased edges
-            kernel_fine = np.ones((3, 3), np.uint8)
-            refined_mask = cv2.dilate(refined_mask, kernel_fine, iterations=2)
-            
-            # Stage 2: Aggressive dilation for outlines/shadows/glow effects
-            kernel_large = np.ones((7, 7), np.uint8)  # LARGE kernel for title text
-            refined_mask = cv2.dilate(refined_mask, kernel_large, iterations=4)
-            
-            # Result: ~6-8px safety margin (catches everything!)
+            # AGGRESSIVE DILATION to cover anti-aliased edges (grey fuzzy pixels)
+            # Manga text has 2-4px soft edges that Otsu misses
+            kernel = np.ones((5, 5), np.uint8)  # Larger kernel for stronger expansion
+            refined_mask = cv2.dilate(refined_mask, kernel, iterations=3)
             
             # Ensure the refined mask doesn't extend beyond original ROI bounds
             refined_mask = cv2.bitwise_and(refined_mask, roi_mask)
@@ -885,13 +891,13 @@ class MangaCleanerApp:
             self.result_image = None
             self.show_result = False
             self.save_btn.config(state='disabled')
-            self.toggle_btn.config(state='disabled', text="👁️ View Result")
+            self.toggle_btn.config(state='disabled', text="Lihat Hasil")
             self._update_canvas_display()
-            self.status_label.config(text="Mask cleared. Ready to draw.")
+            self.status_label.config(text="Mask dihapus. Siap gambar lagi.")
             self.canvas_label.config(
-                text="Draw mask over text to remove",
-                fg='#666666',
-                font=('Arial', 10)
+                text="Gambar mask di area yang ingin dihapus",
+                fg='#7f8c8d',
+                font=('Segoe UI', 10)
             )
     
     def _run_inpainting(self):
@@ -901,18 +907,18 @@ class MangaCleanerApp:
         
         # Check if mask is drawn
         if np.count_nonzero(self.mask) == 0:
-            messagebox.showwarning("No Mask", "Please draw a mask over the text first!")
+            messagebox.showwarning("Belum Ada Mask", "Gambar mask dulu di area yang ingin dihapus!")
             return
         
         # Disable button and start progress
         self.is_processing = True
-        self.run_btn.config(state='disabled', bg='#BDBDBD')
+        self.run_btn.config(state='disabled', bg='#bdc3c7')
         self.progress_bar.start(10)
-        self.status_label.config(text="⚡ Initializing inpainting algorithm...")
+        self.status_label.config(text="Memulai proses...")
         self.canvas_label.config(
-            text="⏳ Starting inpainting process...",
-            fg='#FF9800',
-            font=('Arial', 10, 'bold')
+            text="Sedang diproses...",
+            fg='#e67e22',
+            font=('Segoe UI', 10, 'bold')
         )
         
         # Start inpainting in background thread
@@ -964,14 +970,14 @@ class MangaCleanerApp:
                     remaining = data['remaining']
                     percent = data['percent']
                     self.status_label.config(
-                        text=f"⚡ Processing... Iter: {iteration} | Remaining: {remaining} px | {percent:.1f}% done"
+                        text=f"Proses... Iterasi: {iteration} | Sisa: {remaining} px | {percent:.1f}% selesai"
                     )
                     
                     # Update canvas label
                     self.canvas_label.config(
-                        text="🔴 LIVE PREVIEW - Inpainting in progress...",
-                        fg='#FF5722',
-                        font=('Arial', 10, 'bold')
+                        text="Sedang diproses...",
+                        fg='#e74c3c',
+                        font=('Segoe UI', 10, 'bold')
                     )
                     
                     # Update canvas to show live preview
@@ -984,16 +990,16 @@ class MangaCleanerApp:
                     
                     self.is_processing = False
                     self.progress_bar.stop()
-                    self.run_btn.config(state='normal', bg='#2196F3')
-                    self.save_btn.config(state='normal')
-                    self.toggle_btn.config(state='normal', bg='#9C27B0')
-                    self.status_label.config(text="✅ Inpainting complete! Toggle to view result or save.")
+                    self.run_btn.config(state='normal', bg='#3498db')
+                    self.save_btn.config(state='normal', bg='#85c1e9')
+                    self.toggle_btn.config(state='normal', bg='#85c1e9')
+                    self.status_label.config(text="Selesai! Klik 'Lihat Hasil' atau 'Simpan Hasil'.")
                     
                     # Reset canvas label
                     self.canvas_label.config(
-                        text="✅ Inpainting complete - Toggle to compare",
-                        fg='#4CAF50',
-                        font=('Arial', 10, 'bold')
+                        text="Proses selesai",
+                        fg='#27ae60',
+                        font=('Segoe UI', 10, 'bold')
                     )
                     
                     print("[APP] Inpainting complete!")
@@ -1002,10 +1008,10 @@ class MangaCleanerApp:
                     # Error occurred
                     self.is_processing = False
                     self.progress_bar.stop()
-                    self.run_btn.config(state='normal', bg='#2196F3')
-                    self.status_label.config(text="❌ Error occurred.")
+                    self.run_btn.config(state='normal', bg='#3498db')
+                    self.status_label.config(text="Terjadi error.")
                     
-                    messagebox.showerror("Error", f"Inpainting failed:\n{data}")
+                    messagebox.showerror("Error", f"Proses gagal:\n{data}")
         
         except queue.Empty:
             pass
@@ -1016,11 +1022,11 @@ class MangaCleanerApp:
     def _save_image(self):
         """Save the inpainted result."""
         if self.result_image is None:
-            messagebox.showwarning("No Result", "Please run inpainting first!")
+            messagebox.showwarning("Belum Ada Hasil", "Proses inpainting dulu!")
             return
         
         file_path = filedialog.asksaveasfilename(
-            title="Save Inpainted Image",
+            title="Simpan Gambar",
             defaultextension=".png",
             filetypes=[
                 ("PNG files", "*.png"),
@@ -1032,10 +1038,10 @@ class MangaCleanerApp:
         if file_path:
             try:
                 cv2.imwrite(file_path, self.result_image)
-                messagebox.showinfo("Success", f"Image saved successfully!\n{file_path}")
-                self.status_label.config(text=f"✅ Image saved: {file_path}")
+                messagebox.showinfo("Berhasil", f"Gambar berhasil disimpan!\n{file_path}")
+                self.status_label.config(text="Gambar tersimpan.")
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to save image:\n{str(e)}")
+                messagebox.showerror("Error", f"Gagal simpan:\n{str(e)}")
     
     def _save_mask_state(self):
         """Save current mask state to history for undo/redo."""
@@ -1073,7 +1079,7 @@ class MangaCleanerApp:
             
             self._update_canvas_display()
             self._update_history_buttons()
-            self.status_label.config(text="Undo applied.")
+            self.status_label.config(text="Dibatalkan.")
     
     def _redo(self):
         """Redo previously undone action."""
@@ -1091,21 +1097,21 @@ class MangaCleanerApp:
             
             self._update_canvas_display()
             self._update_history_buttons()
-            self.status_label.config(text="Redo applied.")
+            self.status_label.config(text="Diulangi.")
     
     def _update_history_buttons(self):
         """Update undo/redo button states."""
         # Undo button
         if self.history_index > 0:
-            self.undo_btn.config(state='normal', bg='#607D8B')
+            self.undo_btn.config(state='normal', bg='#95a5a6')
         else:
-            self.undo_btn.config(state='disabled', bg='#BDBDBD')
+            self.undo_btn.config(state='disabled', bg='#bdc3c7')
         
         # Redo button
         if self.history_index < len(self.mask_history) - 1:
-            self.redo_btn.config(state='normal', bg='#607D8B')
+            self.redo_btn.config(state='normal', bg='#95a5a6')
         else:
-            self.redo_btn.config(state='disabled', bg='#BDBDBD')
+            self.redo_btn.config(state='disabled', bg='#bdc3c7')
     
     def _zoom_in(self):
         """Zoom in (increase zoom level)."""
@@ -1113,7 +1119,7 @@ class MangaCleanerApp:
             self.zoom_level = min(self.zoom_level + 0.25, self.zoom_max)
             self.zoom_label.config(text=f"{int(self.zoom_level * 100)}%")
             self._update_canvas_display()
-            self.status_label.config(text=f"Zoomed to {int(self.zoom_level * 100)}%")
+            self.status_label.config(text=f"Zoom {int(self.zoom_level * 100)}%")
     
     def _zoom_out(self):
         """Zoom out (decrease zoom level)."""
@@ -1121,7 +1127,7 @@ class MangaCleanerApp:
             self.zoom_level = max(self.zoom_level - 0.25, self.zoom_min)
             self.zoom_label.config(text=f"{int(self.zoom_level * 100)}%")
             self._update_canvas_display()
-            self.status_label.config(text=f"Zoomed to {int(self.zoom_level * 100)}%")
+            self.status_label.config(text=f"Zoom {int(self.zoom_level * 100)}%")
     
     def _zoom_reset(self):
         """Reset zoom to 100%."""
@@ -1130,7 +1136,7 @@ class MangaCleanerApp:
         self.pan_offset_y = 0
         self.zoom_label.config(text="100%")
         self._update_canvas_display()
-        self.status_label.config(text="Zoom reset to 100%")
+        self.status_label.config(text="Zoom direset.")
     
     def _on_mouse_wheel(self, event):
         """Handle mouse wheel for zooming."""
