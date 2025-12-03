@@ -2,3 +2,4 @@ opencv-python>=4.8.0
 numpy>=1.24.0
 numba>=0.58.0
 Pillow>=10.0.0
+scikit-image>=0.21.0

@@ -48,20 +48,25 @@ class HybridInpainter:
         self.filled_pixels = 0
     
     def inpaint(self, image: np.ndarray, mask: np.ndarray, 
-                padding: int = 20, progress_callback: Optional[Callable] = None) -> np.ndarray:
+                padding: int = 20, progress_callback: Optional[Callable] = None,
+                method: str = "adaptive") -> np.ndarray:
         """
-        Perform adaptive pyramid-based inpainting with texture-aware patch sizing.
+        Perform inpainting using the specified method.
         
         Args:
             image: RGB image (H, W, 3)
             mask: Binary mask (H, W), 255=inpaint, 0=keep
             padding: Padding around ROI bounding box
             progress_callback: Callback for progress updates
+            method: Inpainting method to use:
+                - "telea": OpenCV Telea (fast baseline)
+                - "criminisi_standard": Standard Criminisi on full resolution (slow baseline)
+                - "adaptive": Adaptive Hybrid Pyramid (proposed method, default)
             
         Returns:
-            Inpainted image with direct paste (sharp, clean result)
+            Inpainted image
         """
-        print("\n[INPAINTER] 🎨 ADAPTIVE PYRAMID INPAINTING")
+        print(f"\n[INPAINTER] 🎨 INPAINTING (method={method})")
         print(f"[INPAINTER] Input image shape: {image.shape}")
         print(f"[INPAINTER] Input mask shape: {mask.shape}")
         print(f"[INPAINTER] Mask pixel count: {np.count_nonzero(mask)}")
@@ -74,6 +79,56 @@ class HybridInpainter:
             print("[INPAINTER] WARNING: Mask is empty! Returning original.")
             self.is_running = False
             return image.copy()
+        
+        # ===========================================
+        # METHOD A: OpenCV Telea (Baseline 1)
+        # ===========================================
+        if method == "telea":
+            print("[INPAINTER] Using OpenCV Telea (cv2.INPAINT_TELEA)")
+            # Ensure mask is uint8 binary
+            mask_uint8 = (mask > 0).astype(np.uint8) * 255
+            result = cv2.inpaint(image, mask_uint8, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+            print("[INPAINTER] ✅ Telea inpainting complete!")
+            self.is_running = False
+            return result
+        
+        # ===========================================
+        # METHOD B: Standard Criminisi (Baseline 2)
+        # Full resolution, no pyramid, no smart switch
+        # ===========================================
+        if method == "criminisi_standard":
+            print("[INPAINTER] Using Standard Criminisi (full resolution, no pyramid)")
+            print("[INPAINTER] ⚠️  WARNING: This will be SLOW on large masks!")
+            
+            # Extract ROI but process at FULL resolution
+            roi_data = self._extract_roi(image, mask, padding)
+            if roi_data is None:
+                print("[INPAINTER] WARNING: Could not extract ROI!")
+                self.is_running = False
+                return image.copy()
+            
+            roi_img, roi_mask, bbox = roi_data
+            y1, y2, x1, x2 = bbox
+            
+            print(f"[INPAINTER] ROI: {roi_img.shape[1]}×{roi_img.shape[0]} (FULL RESOLUTION)")
+            print(f"[INPAINTER] Processing {np.count_nonzero(roi_mask)} pixels...")
+            
+            # Process at FULL resolution (no downscaling)
+            result_roi = self._inpaint_small(roi_img, roi_mask, bbox, image, 
+                                            original_roi_shape=None)
+            
+            # Paste back
+            result = image.copy()
+            result[y1:y2, x1:x2] = result_roi
+            
+            print("[INPAINTER] ✅ Standard Criminisi complete!")
+            self.is_running = False
+            return result
+        
+        # ===========================================
+        # METHOD C: Adaptive Hybrid Pyramid (Proposed)
+        # ===========================================
+        print("[INPAINTER] Using Adaptive Hybrid Pyramid (proposed method)")
         
         # Extract ROI
         roi_data = self._extract_roi(image, mask, padding)
