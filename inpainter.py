@@ -85,7 +85,6 @@ class HybridInpainter:
         # ===========================================
         if method == "telea":
             print("[INPAINTER] Using OpenCV Telea (cv2.INPAINT_TELEA)")
-            # Ensure mask is uint8 binary
             mask_uint8 = (mask > 0).astype(np.uint8) * 255
             result = cv2.inpaint(image, mask_uint8, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
             print("[INPAINTER] ✅ Telea inpainting complete!")
@@ -93,7 +92,18 @@ class HybridInpainter:
             return result
         
         # ===========================================
-        # METHOD B: Standard Criminisi (Baseline 2)
+        # METHOD A2: OpenCV Navier-Stokes (Baseline 2)
+        # ===========================================
+        if method == "ns":
+            print("[INPAINTER] Using OpenCV Navier-Stokes (cv2.INPAINT_NS)")
+            mask_uint8 = (mask > 0).astype(np.uint8) * 255
+            result = cv2.inpaint(image, mask_uint8, inpaintRadius=3, flags=cv2.INPAINT_NS)
+            print("[INPAINTER] ✅ Navier-Stokes inpainting complete!")
+            self.is_running = False
+            return result
+        
+        # ===========================================
+        # METHOD B: Standard Criminisi (Baseline 3)
         # Full resolution, no pyramid, no smart switch
         # ===========================================
         if method == "criminisi_standard":
@@ -143,7 +153,7 @@ class HybridInpainter:
         print(f"[INPAINTER] ROI extracted: {roi_img.shape[1]}×{roi_img.shape[0]}")
         print(f"[INPAINTER] ROI mask pixels: {np.count_nonzero(roi_mask)}")
         
-        # Store original for seamless cloning later
+        # Pure Adaptive Pyramid Criminisi (no smart switch)
         orig_h, orig_w = roi_img.shape[:2]
         
         # Determine if we need to downscale
@@ -219,6 +229,52 @@ class HybridInpainter:
         roi_mask = mask[y1:y2, x1:x2].copy()
         
         return roi_img, roi_mask, (y1, y2, x1, x2)
+    
+    def _analyze_boundary_texture(self, roi_img: np.ndarray, roi_mask: np.ndarray) -> Tuple[float, float]:
+        """
+        Analyze the texture at the boundary of the mask region.
+        
+        This helps the Smart Switch decide between Telea (simple) and Criminisi (complex).
+        
+        Args:
+            roi_img: ROI image region (BGR)
+            roi_mask: ROI mask (255=inpaint area, 0=known)
+            
+        Returns:
+            (mean_brightness, std_deviation) of boundary pixels
+        """
+        # Convert to grayscale for analysis
+        if len(roi_img.shape) == 3:
+            gray = cv2.cvtColor(roi_img, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = roi_img.copy()
+        
+        # Create boundary mask by dilating and subtracting
+        kernel = np.ones((5, 5), np.uint8)
+        mask_binary = (roi_mask > 127).astype(np.uint8)
+        
+        # Dilate mask to get outer boundary
+        dilated = cv2.dilate(mask_binary, kernel, iterations=2)
+        # Erode mask to get inner boundary  
+        eroded = cv2.erode(mask_binary, kernel, iterations=1)
+        
+        # Boundary = pixels just outside the mask (known pixels adjacent to unknown)
+        boundary = dilated - mask_binary
+        
+        # Get pixel values at boundary
+        boundary_pixels = gray[boundary > 0]
+        
+        if len(boundary_pixels) < 10:
+            # Fallback: analyze the entire known region
+            known_pixels = gray[mask_binary == 0]
+            if len(known_pixels) < 10:
+                return 128.0, 100.0  # Default to complex
+            boundary_pixels = known_pixels
+        
+        mean_val = float(np.mean(boundary_pixels))
+        std_val = float(np.std(boundary_pixels))
+        
+        return mean_val, std_val
     
     def _calculate_local_variance(self, image: np.ndarray, mask: np.ndarray, 
                                   target_pixel: Tuple[int, int]) -> float:

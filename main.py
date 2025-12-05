@@ -5,6 +5,13 @@ Tab 1: Restoration Mode - Interactive text removal
 Tab 2: Evaluation Mode - Manual masking + Quantitative benchmarking
 """
 
+# Fix High DPI scaling on Windows (must be before tkinter import)
+try:
+    from ctypes import windll
+    windll.shcore.SetProcessDpiAwareness(1)
+except:
+    pass
+
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
@@ -836,18 +843,54 @@ class MangaCleanerApp:
             mask = self.tab2_controller.mask.copy()
             gt = self.eval_ground_truth
             
+            # Store current method name for callback
+            current_method = [""]
+            
+            # Callback for live visualization
+            def benchmark_callback(image, iteration, remaining, percent):
+                self.eval_queue.put(('eval_preview', {
+                    'image': image.copy(),
+                    'method': current_method[0],
+                    'iteration': iteration,
+                    'remaining': remaining,
+                    'percent': percent
+                }))
+            
             methods = [
-                ("Telea", "telea"),
-                ("Criminisi Std", "criminisi_standard"),
-                ("Hybrid (Ours)", "adaptive")
+                ("Telea", "telea", False),              # No callback (instant)
+                ("Navier-Stokes", "ns", False),         # No callback (instant)
+                ("Criminisi Std", "criminisi_standard", True),  # With callback
+                ("Hybrid (Ours)", "adaptive", True)     # With callback
             ]
             
-            for i, (name, key) in enumerate(methods):
-                self.eval_queue.put(('status', f"Running: {name}..."))
-                self.eval_queue.put(('progress', ((i) / 3) * 100))
+            num_methods = len(methods)
+            for i, (name, key, use_callback) in enumerate(methods):
+                current_method[0] = name
+                self.eval_queue.put(('status', f"🔄 Running: {name}..."))
+                self.eval_queue.put(('progress', (i / num_methods) * 100))
+                self.eval_queue.put(('method_start', name))
                 
                 t0 = time.time()
-                result = inp.inpaint(input_img.copy(), mask.copy(), method=key)
+                
+                if use_callback:
+                    # Run with live preview callback
+                    result = inp.inpaint(
+                        input_img.copy(), mask.copy(), 
+                        method=key,
+                        progress_callback=benchmark_callback
+                    )
+                else:
+                    # Run without callback (Telea is instant)
+                    result = inp.inpaint(input_img.copy(), mask.copy(), method=key)
+                    # Show final result immediately
+                    self.eval_queue.put(('eval_preview', {
+                        'image': result.copy(),
+                        'method': name,
+                        'iteration': 1,
+                        'remaining': 0,
+                        'percent': 100.0
+                    }))
+                
                 elapsed = time.time() - t0
                 
                 # Calculate metrics against GT
@@ -861,12 +904,24 @@ class MangaCleanerApp:
                     'ssim': ssim_val
                 }
                 
+                # Show final result for this method
+                self.eval_queue.put(('eval_preview', {
+                    'image': result.copy(),
+                    'method': name,
+                    'iteration': -1,  # -1 = final
+                    'remaining': 0,
+                    'percent': 100.0
+                }))
+                
                 self.eval_queue.put(('result', (name, elapsed, psnr_val, ssim_val)))
+                self.eval_queue.put(('method_complete', name))
             
             self.eval_queue.put(('progress', 100))
             self.eval_queue.put(('complete', None))
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self.eval_queue.put(('error', str(e)))
     
     def _check_eval_queue(self):
@@ -876,13 +931,42 @@ class MangaCleanerApp:
                 
                 if t == 'status':
                     self.tab2_status.config(text=d)
+                
                 elif t == 'progress':
                     self.tab2_progress['value'] = d
+                
+                elif t == 'method_start':
+                    # Highlight which method is running
+                    self.tab2_status.config(text=f"🎨 Visualizing: {d}...")
+                
+                elif t == 'method_complete':
+                    self.tab2_status.config(text=f"✓ {d} complete!")
+                
+                elif t == 'eval_preview':
+                    # Live visualization update
+                    img = d['image']
+                    method = d['method']
+                    iteration = d['iteration']
+                    remaining = d['remaining']
+                    percent = d['percent']
+                    
+                    # Update canvas with preview
+                    self._update_eval_canvas(img)
+                    
+                    # Update status with progress info
+                    if iteration == -1:
+                        self.tab2_status.config(text=f"✓ {method} - Complete!")
+                    else:
+                        self.tab2_status.config(
+                            text=f"🎨 {method} | It:{iteration} | Rem:{remaining}px | {percent:.1f}%"
+                        )
+                
                 elif t == 'result':
                     name, elapsed, psnr_val, ssim_val = d
                     self.tab2_tree.insert('', 'end', values=(
                         name, f"{elapsed:.2f}", f"{psnr_val:.2f}", f"{ssim_val:.4f}"
                     ))
+                
                 elif t == 'complete':
                     self.eval_is_running = False
                     self.tab2_run_btn.config(state='normal', bg='#3498db')
@@ -890,6 +974,9 @@ class MangaCleanerApp:
                     self.tab2_show_btn.config(state='normal')
                     self.tab2_status.config(text="✓ Benchmark selesai!")
                     self._print_markdown()
+                    # Restore original input display
+                    self._update_eval_canvas(self.eval_input_image)
+                
                 elif t == 'error':
                     self.eval_is_running = False
                     self.tab2_run_btn.config(state='normal', bg='#3498db')
@@ -899,7 +986,54 @@ class MangaCleanerApp:
             pass
         
         if self.eval_is_running:
-            self.root.after(100, self._check_eval_queue)
+            self.root.after(50, self._check_eval_queue)  # Faster refresh for smoother animation
+    
+    def _update_eval_canvas(self, image: np.ndarray):
+        """Update the evaluation canvas with a new image (for live preview).
+        Respects current zoom and pan settings from tab2_controller.
+        """
+        if image is None:
+            return
+        
+        # Use controller's scale factor if available
+        ctrl = self.tab2_controller
+        h, w = image.shape[:2]
+        
+        # Use same scaling as controller
+        if ctrl and ctrl.scale_factor:
+            scale = ctrl.scale_factor
+        else:
+            max_w, max_h = 700, 550
+            scale = min(max_w / w, max_h / h, 1.0)
+        
+        new_w, new_h = int(w * scale), int(h * scale)
+        
+        # Resize for display
+        display = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        
+        # Apply zoom if set
+        if ctrl and ctrl.zoom_level != 1.0:
+            zh, zw = int(new_h * ctrl.zoom_level), int(new_w * ctrl.zoom_level)
+            display = cv2.resize(display, (zw, zh), interpolation=cv2.INTER_LINEAR)
+        
+        display_rgb = cv2.cvtColor(display, cv2.COLOR_BGR2RGB)
+        
+        # Convert to PhotoImage
+        pil_img = Image.fromarray(display_rgb)
+        self._eval_preview_tk = ImageTk.PhotoImage(pil_img)
+        
+        # Get pan offset from controller
+        px = ctrl.pan_offset_x if ctrl else 0
+        py = ctrl.pan_offset_y if ctrl else 0
+        
+        # Update canvas
+        if hasattr(self, '_eval_canvas_img_id') and self._eval_canvas_img_id:
+            self.tab2_canvas.itemconfig(self._eval_canvas_img_id, image=self._eval_preview_tk)
+            self.tab2_canvas.coords(self._eval_canvas_img_id, px, py)
+        else:
+            self._eval_canvas_img_id = self.tab2_canvas.create_image(
+                px, py, anchor='nw', image=self._eval_preview_tk
+            )
     
     def _print_markdown(self):
         print("\n" + "="*70)
@@ -917,7 +1051,16 @@ class MangaCleanerApp:
         
         # Create comparison image
         h, w = self.eval_input_image.shape[:2]
-        thumb_w = min(300, w)
+        
+        # Calculate thumbnail size to fit max 1600px total width
+        MAX_TOTAL_WIDTH = 1600
+        num_images = 6  # Input, Telea, NS, Criminisi, Hybrid, GT
+        gap = 4
+        label_h = 28
+        
+        # Calculate max thumb width
+        available_width = MAX_TOTAL_WIDTH - (num_images - 1) * gap
+        thumb_w = min(available_width // num_images, w)
         scale = thumb_w / w
         thumb_h = int(h * scale)
         
@@ -927,32 +1070,40 @@ class MangaCleanerApp:
         images = [
             ("Input", resize(self.eval_input_image)),
             ("Telea", resize(self.eval_results.get("Telea", {}).get('result', self.eval_input_image))),
+            ("Navier-Stokes", resize(self.eval_results.get("Navier-Stokes", {}).get('result', self.eval_input_image))),
             ("Criminisi", resize(self.eval_results.get("Criminisi Std", {}).get('result', self.eval_input_image))),
             ("Hybrid", resize(self.eval_results.get("Hybrid (Ours)", {}).get('result', self.eval_input_image))),
             ("Ground Truth", resize(self.eval_ground_truth)),
         ]
         
         # Build grid
-        gap = 5
-        label_h = 30
         grid_w = len(images) * thumb_w + (len(images) - 1) * gap
         grid_h = thumb_h + label_h
         
-        grid = np.ones((grid_h, grid_w, 3), dtype=np.uint8) * 50
+        grid = np.ones((grid_h, grid_w, 3), dtype=np.uint8) * 40
         
         x = 0
         for name, img in images:
             grid[0:thumb_h, x:x+thumb_w] = img
-            # Label
-            cv2.rectangle(grid, (x, thumb_h), (x + thumb_w, grid_h), (70, 70, 70), -1)
-            ts = cv2.getTextSize(name, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+            # Label background
+            cv2.rectangle(grid, (x, thumb_h), (x + thumb_w, grid_h), (60, 60, 60), -1)
+            # Label text (smaller font for compact display)
+            font_scale = 0.45 if len(name) > 8 else 0.5
+            ts = cv2.getTextSize(name, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1)[0]
             tx = x + (thumb_w - ts[0]) // 2
             ty = thumb_h + (label_h + ts[1]) // 2
-            cv2.putText(grid, name, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(grid, name, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 1)
             x += thumb_w + gap
         
+        # Always resize to fit max width (ensures it fits on screen)
+        if grid_w > MAX_TOTAL_WIDTH:
+            final_scale = MAX_TOTAL_WIDTH / grid_w
+            new_grid_w = int(grid_w * final_scale)
+            new_grid_h = int(grid_h * final_scale)
+            grid = cv2.resize(grid, (new_grid_w, new_grid_h), interpolation=cv2.INTER_AREA)
+        
         # Show with OpenCV
-        cv2.imshow("Benchmark Comparison", grid)
+        cv2.imshow("Benchmark Comparison (Press any key to close)", grid)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
     
