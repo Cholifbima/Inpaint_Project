@@ -103,35 +103,18 @@ class HybridInpainter:
             return result
         
         # ===========================================
-        # METHOD B: Standard Criminisi (Baseline 3)
-        # Full resolution, no pyramid, no smart switch
+        # METHOD B: Standard Criminisi 2004 (PURE BASELINE)
+        # NO optimizations - strictly original algorithm
         # ===========================================
         if method == "criminisi_standard":
-            print("[INPAINTER] Using Standard Criminisi (full resolution, no pyramid)")
-            print("[INPAINTER] ⚠️  WARNING: This will be SLOW on large masks!")
+            print("[INPAINTER] Using PURE Standard Criminisi 2004")
+            print("[INPAINTER] ⚠️  WARNING: VERY SLOW - Global search, no optimizations!")
+            print("[INPAINTER] Features: Fixed 9x9, Pure SSD, Global Search, P=C*D")
             
-            # Extract ROI but process at FULL resolution
-            roi_data = self._extract_roi(image, mask, padding)
-            if roi_data is None:
-                print("[INPAINTER] WARNING: Could not extract ROI!")
-                self.is_running = False
-                return image.copy()
+            # Process on FULL image (no ROI extraction for true baseline)
+            result = self._inpaint_standard_criminisi(image.copy(), mask.copy())
             
-            roi_img, roi_mask, bbox = roi_data
-            y1, y2, x1, x2 = bbox
-            
-            print(f"[INPAINTER] ROI: {roi_img.shape[1]}×{roi_img.shape[0]} (FULL RESOLUTION)")
-            print(f"[INPAINTER] Processing {np.count_nonzero(roi_mask)} pixels...")
-            
-            # Process at FULL resolution (no downscaling)
-            result_roi = self._inpaint_small(roi_img, roi_mask, bbox, image, 
-                                            original_roi_shape=None)
-            
-            # Paste back
-            result = image.copy()
-            result[y1:y2, x1:x2] = result_roi
-            
-            print("[INPAINTER] ✅ Standard Criminisi complete!")
+            print("[INPAINTER] ✅ Standard Criminisi 2004 complete!")
             self.is_running = False
             return result
         
@@ -185,7 +168,8 @@ class HybridInpainter:
             
             # Process at small scale (pass original shape for preview upscaling)
             result_small = self._inpaint_small(small_img, small_mask, bbox, image, 
-                                              original_roi_shape=(orig_h, orig_w))
+                                              original_roi_shape=(orig_h, orig_w),
+                                              use_adaptive=True)  # Adaptive patch sizing
             
             # Upscale result (CUBIC for sharp, fast quality)
             print(f"[PYRAMID] Upscaling back to {orig_w}×{orig_h} (CUBIC interpolation)...")
@@ -196,7 +180,8 @@ class HybridInpainter:
             # Direct processing (ROI already small)
             print(f"[INPAINTER] ROI small enough, processing directly...")
             result_roi = self._inpaint_small(roi_img, roi_mask, bbox, image, 
-                                            original_roi_shape=None)  # Not downscaled
+                                            original_roi_shape=None,
+                                            use_adaptive=True)  # Adaptive patch sizing
         
         print(f"[INPAINTER] Pasting result back to original image...")
         
@@ -229,6 +214,210 @@ class HybridInpainter:
         roi_mask = mask[y1:y2, x1:x2].copy()
         
         return roi_img, roi_mask, (y1, y2, x1, x2)
+    
+    # ===========================================================================
+    # STANDARD CRIMINISI 2004 - PURE BASELINE (Truly slow, no shortcuts)
+    # ===========================================================================
+    def _inpaint_standard_criminisi(self, image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """
+        PURE Standard Criminisi (2004) Implementation.
+        
+        This is intentionally slow to serve as an honest baseline:
+        - Fixed 9x9 patch size (no adaptive sizing)
+        - Pure SSD matching (no distance/variance penalty)
+        - FULL IMAGE search (truly O(N) per iteration)
+        - Check ALL fill front pixels for priority (no sampling)
+        - Simple P = C * D priority
+        - No pyramid, no watchdog
+        """
+        PATCH_SIZE = 9
+        half = PATCH_SIZE // 2
+        
+        print(f"[STD-CRIMINISI] ══════════════════════════════════════")
+        print(f"[STD-CRIMINISI] PURE Criminisi 2004 (No Optimizations)")
+        print(f"[STD-CRIMINISI] Patch: {PATCH_SIZE}x{PATCH_SIZE} FIXED")
+        print(f"[STD-CRIMINISI] Search: FULL IMAGE (slow)")
+        print(f"[STD-CRIMINISI] Priority: Check ALL boundary pixels")
+        print(f"[STD-CRIMINISI] ══════════════════════════════════════")
+        
+        # Working copies
+        working_img = image.astype(np.float32)
+        working_mask = (mask > 0).astype(np.uint8)
+        
+        if working_mask.sum() == 0:
+            return image.copy()
+        
+        # Initialize confidence map
+        confidence = (1.0 - working_mask).astype(np.float32)
+        
+        # Compute gradients
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        grad_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        
+        h, w = image.shape[:2]
+        initial_pixels = working_mask.sum()
+        iteration = 0
+        max_iterations = 10000
+        
+        print(f"[STD-CRIMINISI] Pixels to fill: {initial_pixels}")
+        print(f"[STD-CRIMINISI] Image size: {w}x{h} = {w*h} pixels to search")
+        
+        last_update_time = time.time()
+        start_time = time.time()
+        
+        while working_mask.sum() > 0 and iteration < max_iterations:
+            # ========================================
+            # STEP 1: Find fill front (ALL boundary pixels)
+            # ========================================
+            kernel = np.ones((3, 3), np.uint8)
+            dilated = cv2.dilate(working_mask, kernel, iterations=1)
+            fill_front = np.argwhere((dilated > 0) & (working_mask > 0))
+            
+            if len(fill_front) == 0:
+                fill_front = np.argwhere(working_mask > 0)
+                if len(fill_front) == 0:
+                    break
+            
+            # ========================================
+            # STEP 2: Compute priorities for ALL front pixels (SLOW!)
+            # ========================================
+            best_priority = -1
+            best_pixel = None
+            
+            # NO SAMPLING - check every single boundary pixel
+            for pixel in fill_front:
+                py, px = pixel
+                
+                if py - half < 0 or py + half + 1 > h or px - half < 0 or px + half + 1 > w:
+                    continue
+                
+                # Confidence term C(p)
+                patch_conf = confidence[py-half:py+half+1, px-half:px+half+1]
+                C_p = np.mean(patch_conf)
+                
+                # Data term D(p)
+                gx = grad_x[py, px]
+                gy = grad_y[py, px]
+                D_p = np.sqrt(gx**2 + gy**2) / 255.0
+                
+                # Priority = C * D
+                priority = C_p * (D_p + 0.001)
+                
+                if priority > best_priority:
+                    best_priority = priority
+                    best_pixel = (py, px)
+            
+            if best_pixel is None:
+                idx = np.random.randint(0, len(fill_front))
+                best_pixel = tuple(fill_front[idx])
+            
+            ty, tx = best_pixel
+            
+            # ========================================
+            # STEP 3: FULL IMAGE SEARCH (Pure SSD, no shortcuts)
+            # ========================================
+            if ty - half < 0 or ty + half + 1 > h or tx - half < 0 or tx + half + 1 > w:
+                working_mask[ty, tx] = 0
+                iteration += 1
+                continue
+            
+            target_patch = working_img[ty-half:ty+half+1, tx-half:tx+half+1].copy()
+            target_patch_mask = working_mask[ty-half:ty+half+1, tx-half:tx+half+1]
+            known_in_target = (target_patch_mask == 0)
+            
+            if known_in_target.sum() < PATCH_SIZE:
+                mean_val = np.mean(working_img[working_mask == 0], axis=0) if (working_mask == 0).sum() > 0 else [128, 128, 128]
+                working_img[ty, tx] = mean_val
+                working_mask[ty, tx] = 0
+                confidence[ty, tx] = 0.1
+                iteration += 1
+                continue
+            
+            # Fill unknown with mean for template matching
+            if np.any(target_patch_mask > 0):
+                mean_color = np.mean(target_patch[known_in_target], axis=0)
+                for c in range(3):
+                    target_patch[:, :, c] = np.where(target_patch_mask > 0, mean_color[c], target_patch[:, :, c])
+            
+            # FULL IMAGE SEARCH using cv2.matchTemplate (searches entire image)
+            best_match = None
+            
+            try:
+                # Search the ENTIRE image (not limited radius)
+                result = cv2.matchTemplate(working_img.astype(np.float32),
+                                          target_patch.astype(np.float32),
+                                          cv2.TM_SQDIFF)
+                
+                result_h, result_w = result.shape
+                
+                # Mask ALL positions that overlap with ANY masked pixel
+                # This is the slow part - checking every position
+                for ry in range(result_h):
+                    for rx in range(result_w):
+                        # Check if this patch position overlaps with mask
+                        patch_mask = working_mask[ry:ry+PATCH_SIZE, rx:rx+PATCH_SIZE]
+                        if np.any(patch_mask > 0):
+                            result[ry, rx] = float('inf')
+                        
+                        # Also mask self-match region
+                        if abs(ry + half - ty) < PATCH_SIZE and abs(rx + half - tx) < PATCH_SIZE:
+                            result[ry, rx] = float('inf')
+                
+                if np.min(result) < float('inf'):
+                    min_loc = np.unravel_index(np.argmin(result), result.shape)
+                    best_match = (min_loc[0] + half, min_loc[1] + half)
+            except Exception as e:
+                pass
+            
+            # ========================================
+            # STEP 4: Copy patch (pixel by pixel, slow)
+            # ========================================
+            if best_match is not None:
+                sy, sx = best_match
+                if (sy - half >= 0 and sy + half + 1 <= h and 
+                    sx - half >= 0 and sx + half + 1 <= w):
+                    
+                    # Copy each pixel individually (no vectorization)
+                    for py_off in range(-half, half + 1):
+                        for px_off in range(-half, half + 1):
+                            tpy, tpx = ty + py_off, tx + px_off
+                            spy, spx = sy + py_off, sx + px_off
+                            
+                            if 0 <= tpy < h and 0 <= tpx < w and 0 <= spy < h and 0 <= spx < w:
+                                if working_mask[tpy, tpx] > 0:
+                                    working_img[tpy, tpx] = working_img[spy, spx]
+                                    working_mask[tpy, tpx] = 0
+                                    confidence[tpy, tpx] = confidence[spy, spx] * confidence[ty, tx]
+            else:
+                # Fallback
+                local_region = working_img[max(0,ty-20):min(h,ty+20), max(0,tx-20):min(w,tx+20)]
+                local_mask = working_mask[max(0,ty-20):min(h,ty+20), max(0,tx-20):min(w,tx+20)]
+                known_local = local_region[local_mask == 0]
+                if len(known_local) > 0:
+                    working_img[ty, tx] = np.mean(known_local, axis=0)
+                working_mask[ty, tx] = 0
+                confidence[ty, tx] = 0.1
+            
+            iteration += 1
+            
+            # Progress update every 500ms
+            current_time = time.time()
+            if current_time - last_update_time >= 0.5:
+                remaining = working_mask.sum()
+                percent = ((initial_pixels - remaining) / initial_pixels) * 100
+                elapsed = current_time - start_time
+                print(f"[STD-CRIMINISI] Iter {iteration}: {remaining} left ({percent:.1f}%) - {elapsed:.1f}s elapsed")
+                
+                if self.progress_callback:
+                    self.progress_callback(np.clip(working_img, 0, 255).astype(np.uint8), 
+                                          iteration, remaining, percent)
+                last_update_time = current_time
+        
+        total_time = time.time() - start_time
+        print(f"[STD-CRIMINISI] ✅ Complete in {total_time:.1f}s ({iteration} iterations)")
+        
+        return np.clip(working_img, 0, 255).astype(np.uint8)
     
     def _analyze_boundary_texture(self, roi_img: np.ndarray, roi_mask: np.ndarray) -> Tuple[float, float]:
         """
@@ -326,10 +515,10 @@ class HybridInpainter:
     
     def _inpaint_small(self, image: np.ndarray, mask: np.ndarray,
                       bbox: Tuple, full_image: np.ndarray,
-                      original_roi_shape: Optional[Tuple[int, int]] = None) -> np.ndarray:
+                      original_roi_shape: Optional[Tuple[int, int]] = None,
+                      use_adaptive: bool = True) -> np.ndarray:
         """
         Core inpainting on (possibly downscaled) image.
-        Uses fixed patch size for simplicity and speed.
         
         Args:
             image: Image to inpaint (may be downscaled)
@@ -337,6 +526,7 @@ class HybridInpainter:
             bbox: Bounding box in full image coordinates
             full_image: Full resolution original image
             original_roi_shape: Original ROI shape (h, w) before downscaling, None if not downscaled
+            use_adaptive: If True, use adaptive patch sizing (7-11). If False, fixed 9x9 (Pure Criminisi 2004)
         """
         # Convert to binary
         target_region = (mask > 0).astype(np.uint8)
@@ -362,7 +552,12 @@ class HybridInpainter:
         initial_mask_sum = working_mask.sum()
         
         print(f"[INPAINTER] Starting iterations... Target pixels: {initial_mask_sum}")
-        print(f"[INPAINTER] Using ADAPTIVE patch sizing (7x7 to 11x11, prioritizing detail)")
+        
+        if use_adaptive:
+            print(f"[INPAINTER] Using ADAPTIVE patch sizing (7x7 to 11x11, prioritizing detail)")
+        else:
+            print(f"[INPAINTER] Using FIXED patch sizing (9x9) - Standard Criminisi Mode")
+            self.patch_size = 9  # Lock to fixed size
         
         last_update_time = time.time()
         update_interval = 0.25  # Update every 250ms (every ~50 iterations)
@@ -392,24 +587,27 @@ class HybridInpainter:
                 target_pixel = fill_front[np.random.randint(0, len(fill_front))]
             
             # ==========================================
-            # ADAPTIVE PATCH SIZING (Texture-Aware)
-            # TUNED FOR COMPLEX SFX/SPEED LINES
+            # PATCH SIZE SELECTION
             # ==========================================
-            local_variance = self._calculate_local_variance(working_img, working_mask, target_pixel)
-            
-            # Decide patch size based on variance (AGGRESSIVE FOR DETAIL)
-            if local_variance < 10:
-                # VERY LOW VARIANCE: Flat/smooth area (pure white bubble)
-                # Use MODERATE patch (not too large to avoid over-smoothing)
-                self.patch_size = 11
-            elif local_variance > 30:
-                # HIGH VARIANCE: Busy texture (SFX, speed lines, screentones)
-                # Use SMALL patch for maximum detail preservation
-                self.patch_size = 7
-            else:
-                # MEDIUM VARIANCE: Balanced
-                # Use SMALL-MEDIUM patch to favor detail
-                self.patch_size = 9
+            if use_adaptive:
+                # ADAPTIVE PATCH SIZING (Texture-Aware)
+                # TUNED FOR COMPLEX SFX/SPEED LINES
+                local_variance = self._calculate_local_variance(working_img, working_mask, target_pixel)
+                
+                # Decide patch size based on variance (AGGRESSIVE FOR DETAIL)
+                if local_variance < 10:
+                    # VERY LOW VARIANCE: Flat/smooth area (pure white bubble)
+                    # Use MODERATE patch (not too large to avoid over-smoothing)
+                    self.patch_size = 11
+                elif local_variance > 30:
+                    # HIGH VARIANCE: Busy texture (SFX, speed lines, screentones)
+                    # Use SMALL patch for maximum detail preservation
+                    self.patch_size = 7
+                else:
+                    # MEDIUM VARIANCE: Balanced
+                    # Use SMALL-MEDIUM patch to favor detail
+                    self.patch_size = 9
+            # else: patch_size already locked to 9 at start (Pure Criminisi 2004)
             
             # Find best match with adaptive patch size
             best_match = self._find_best_match(working_img, working_mask, target_pixel)
@@ -530,7 +728,10 @@ class HybridInpainter:
                         target_pixel: Tuple[int, int]) -> Optional[Tuple[int, int]]:
         """
         Find best matching patch using cv2.matchTemplate.
-        Uses standard SSD + distance penalty (clean and fast).
+        Uses SSD + distance penalty + VARIANCE PENALTY for texture consistency.
+        
+        The Variance Penalty prevents selecting textured patches for flat regions
+        (e.g., prevents noisy artifacts in clean white speech bubbles).
         """
         ty, tx = target_pixel
         half = self.patch_size // 2
@@ -549,6 +750,13 @@ class HybridInpainter:
         known_mask = (target_mask == 0)
         if known_mask.sum() < self.patch_size:
             return None
+        
+        # ==========================================
+        # VARIANCE CALCULATION for target patch
+        # ==========================================
+        target_known_pixels = target_patch[known_mask]
+        target_gray = np.mean(target_known_pixels, axis=1)  # Convert to grayscale intensity
+        target_variance = np.std(target_gray)  # StdDev of known pixels
         
         # Fill masked region with mean for template matching
         if np.any(target_mask > 0):
@@ -616,20 +824,24 @@ class HybridInpainter:
             # Apply distance penalty (closer patches = lower penalty)
             distance_penalty = normalized_distances * distance_penalty_factor
             
-            # Final weighted error = SSD error + distance penalty
-            # This makes nearby patches more attractive
+            # ==========================================
+            # VARIANCE PENALTY (Texture Consistency)
+            # Prevents noisy patches in flat white areas
+            # ==========================================
+            VARIANCE_WEIGHT = 100.0  # High weight for strict texture matching
+            
+            # Final weighted error = SSD + distance penalty (start)
             final_error = result + distance_penalty
             
-            # Mask invalid regions
+            # Mask invalid regions first
             valid_result = cv2.matchTemplate(search_valid.astype(np.float32),
                                             np.ones((self.patch_size, self.patch_size), np.float32),
                                             cv2.TM_SQDIFF)
             
             final_error[valid_result > 0.1] = float('inf')
             
-            # CRITICAL FIX: Mask self-match AND all masked regions more aggressively
-            # 1. Mask the exact target location (prevent narcissist bug)
-            self_margin = half + 3  # Larger margin
+            # Mask self-match (prevent narcissist bug)
+            self_margin = half + 3
             self_y1 = max(0, target_local_y - self_margin)
             self_y2 = min(result_h, target_local_y + self_margin)
             self_x1 = max(0, target_local_x - self_margin)
@@ -638,20 +850,36 @@ class HybridInpainter:
             if self_y2 > self_y1 and self_x2 > self_x1:
                 final_error[self_y1:self_y2, self_x1:self_x2] = float('inf')
             
-            # 2. Also mask any areas that overlap with ANY masked pixels
-            # This prevents matching patches that contain holes
+            # Combined loop: Calculate variance penalty + mask overlapping regions
             for res_y in range(result_h):
                 for res_x in range(result_w):
-                    # Check if this location's patch overlaps mask
-                    patch_y1 = sy1 + res_y
-                    patch_y2 = sy1 + res_y + self.patch_size
-                    patch_x1 = sx1 + res_x
-                    patch_x2 = sx1 + res_x + self.patch_size
+                    # Skip already-invalidated positions
+                    if final_error[res_y, res_x] == float('inf'):
+                        continue
                     
-                    if (patch_y2 <= h and patch_x2 <= w):
-                        patch_region_mask = mask[patch_y1:patch_y2, patch_x1:patch_x2]
+                    # Get source patch location
+                    src_y1 = sy1 + res_y
+                    src_y2 = sy1 + res_y + self.patch_size
+                    src_x1 = sx1 + res_x
+                    src_x2 = sx1 + res_x + self.patch_size
+                    
+                    if src_y2 <= h and src_x2 <= w:
+                        # Check if patch overlaps with masked region
+                        patch_region_mask = mask[src_y1:src_y2, src_x1:src_x2]
                         if np.any(patch_region_mask > 0):
                             final_error[res_y, res_x] = float('inf')
+                            continue
+                        
+                        # Calculate variance penalty for valid patches
+                        src_patch = image[src_y1:src_y2, src_x1:src_x2]
+                        src_gray = np.mean(src_patch.reshape(-1, 3), axis=1)
+                        src_variance = np.std(src_gray)
+                        
+                        # Add variance penalty: penalize texture mismatch
+                        variance_diff = abs(target_variance - src_variance)
+                        final_error[res_y, res_x] += variance_diff * VARIANCE_WEIGHT
+                    else:
+                        final_error[res_y, res_x] = float('inf')
             
             # Find best
             if np.min(final_error) == float('inf'):
