@@ -30,7 +30,7 @@ class HybridInpainter:
     def inpaint(self, image: np.ndarray, mask: np.ndarray, 
                 padding: int = 20, progress_callback: Optional[Callable] = None,
                 method: str = "adaptive") -> np.ndarray:
-        """Fungsi utama inpainting. method: telea/patchmatch/criminisi_standard/adaptive"""
+        """Fungsi utama inpainting. method: telea/criminisi_standard/adaptive"""
         print(f"\n[INPAINTER] 🎨 INPAINTING (method={method})")
         print(f"[INPAINTER] Input image shape: {image.shape}")
         print(f"[INPAINTER] Input mask shape: {mask.shape}")
@@ -54,20 +54,10 @@ class HybridInpainter:
             self.is_running = False
             return result
         
-        # METODE PATCHMATCH
-        if method == "patchmatch":
-            print("[INPAINTER] Using PatchMatch (Barnes et al. 2009)")
-            result = self._inpaint_patchmatch(image, mask)
-            print("[INPAINTER] ✅ PatchMatch inpainting complete!")
-            self.is_running = False
-            return result
-        
         # METODE CRIMINISI STANDAR (lambat, tanpa optimasi)
         if method == "criminisi_standard":
             print("[INPAINTER] Using PURE Standard Criminisi 2004")
-            print("[INPAINTER] ⚠️  WARNING: VERY SLOW - Global search, no optimizations!")
-            print("[INPAINTER] Features: Fixed 9x9, Pure SSD, Global Search, P=C*D")
-            
+
             # proses full image tanpa ROI
             result = self._inpaint_standard_criminisi(image.copy(), mask.copy())
             
@@ -168,43 +158,6 @@ class HybridInpainter:
         roi_mask = mask[y1:y2, x1:x2].copy()
         
         return roi_img, roi_mask, (y1, y2, x1, x2)
-    
-    # PATCHMATCH via OpenCV xphoto
-    def _inpaint_patchmatch(self, image: np.ndarray, mask: np.ndarray) -> np.ndarray:
-        """Inpainting cepat pakai FSR dari OpenCV xphoto."""
-        # konversi mask (xphoto punya konvensi terbalik)
-        mask_inverted = ((mask == 0) * 255).astype(np.uint8)
-        
-        # coba pakai xphoto
-        try:
-            result = np.zeros_like(image)
-            cv2.xphoto.inpaint(image, mask_inverted, result, cv2.xphoto.INPAINT_FSR_FAST)
-            print("[PATCHMATCH] Using OpenCV xphoto.inpaint (FSR_FAST)")
-            return result
-        except AttributeError:
-            pass
-        except Exception as e:
-            print(f"[PATCHMATCH] xphoto error: {e}")
-        
-        # fallback ke PyPatchMatch
-        try:
-            from patchmatch import patch_match
-            print("[PATCHMATCH] Using PyPatchMatch library")
-            mask_uint8 = (mask > 0).astype(np.uint8) * 255
-            result = patch_match.inpaint(image, mask_uint8, patch_size=5)
-            return result
-        except ImportError:
-            pass
-        except Exception as e:
-            print(f"[PATCHMATCH] PyPatchMatch error: {e}")
-        
-        # fallback terakhir: Telea
-        print("[PATCHMATCH] ⚠️ WARNING: PatchMatch/FSR not available!")
-        print("[PATCHMATCH] Install: pip install opencv-contrib-python")
-        print("[PATCHMATCH] Falling back to Telea...")
-        mask_uint8 = (mask > 0).astype(np.uint8) * 255
-        result = cv2.inpaint(image, mask_uint8, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-        return result
     
     # CRIMINISI STANDAR 2004 - baseline murni tanpa optimasi
     def _inpaint_standard_criminisi(self, image: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -528,7 +481,7 @@ class HybridInpainter:
                 stagnation_counter += 1
                 
                 if stagnation_counter >= max_stagnation:
-                    print(f"\n[WATCHDOG] ⚠️  STAGNATION DETECTED!")
+                    print(f"\nSTAGNATION DETECTED")
                     print(f"[WATCHDOG] No progress for {stagnation_counter} iterations")
                     print(f"[WATCHDOG] Remaining: {current_pixels_remaining} pixels")
                     print(f"[WATCHDOG] Forcing random fill to break deadlock...")

@@ -1,11 +1,3 @@
-"""
-Manga Text Inpainting Tool - Tabbed Interface
-==============================================
-Tab 1: Restoration Mode - Interactive text removal
-Tab 2: Evaluation Mode - Manual masking + Quantitative benchmarking
-"""
-
-# Fix High DPI scaling on Windows (must be before tkinter import)
 try:
     from ctypes import windll
     windll.shcore.SetProcessDpiAwareness(1)
@@ -30,12 +22,10 @@ try:
     SKIMAGE_AVAILABLE = True
 except ImportError:
     SKIMAGE_AVAILABLE = False
-    print("[WARNING] scikit-image not found. pip install scikit-image")
+    print("[scikit-image not found. pip install scikit-image")
 
 
 class CanvasController:
-    """Unified canvas controller for brush drawing, zoom, and pan."""
-    
     def __init__(self, canvas: tk.Canvas, on_update: Callable):
         self.canvas = canvas
         self.on_update = on_update
@@ -83,7 +73,6 @@ class CanvasController:
         self.canvas.bind('<MouseWheel>', self._on_mouse_wheel)
     
     def load_image(self, image: np.ndarray):
-        """Load an image into the canvas."""
         self.original_image = image.copy()
         h, w = image.shape[:2]
         self.mask = np.zeros((h, w), dtype=np.uint8)
@@ -340,8 +329,6 @@ class CanvasController:
 
 
 class MangaCleanerApp:
-    """Main application with tabbed interface."""
-    
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Manga Inpainting - Adaptive Hybrid Pyramid")
@@ -393,10 +380,8 @@ class MangaCleanerApp:
         self.notebook.add(self.tab2_frame, text='  Mode Evaluasi  ')
         self._create_tab2()
     
-    # =========================================================================
+
     # TAB 1: RESTORATION MODE
-    # =========================================================================
-    
     def _create_tab1(self):
         main = tk.Frame(self.tab1_frame, bg='#f0f0f0')
         main.pack(fill='both', expand=True, padx=10, pady=10)
@@ -414,7 +399,7 @@ class MangaCleanerApp:
                  bg='#3498db', fg='white', padx=30, pady=10, relief='flat',
                  command=self._tab1_upload_image).pack(pady=20)
         
-        # Canvas frame (hidden initially)
+        # Canvas frame
         self.tab1_canvas_frame = tk.Frame(left, bg='#ffffff')
         self.tab1_canvas_label = tk.Label(self.tab1_canvas_frame, 
             text="Gambar mask di area yang ingin dihapus",
@@ -622,10 +607,7 @@ class MangaCleanerApp:
         self.tab1_save_btn.config(state='disabled')
         self.tab1_status.config(text="Siap. Muat gambar untuk mulai.")
     
-    # =========================================================================
     # TAB 2: EVALUATION MODE
-    # =========================================================================
-    
     def _create_tab2(self):
         main = tk.Frame(self.tab2_frame, bg='#f0f0f0')
         main.pack(fill='both', expand=True, padx=10, pady=10)
@@ -857,10 +839,9 @@ class MangaCleanerApp:
                 }))
             
             methods = [
-                ("Telea", "telea", False),              # No callback (instant)
-                ("PatchMatch", "patchmatch", False),    # No callback (fast)
-                ("Criminisi Std", "criminisi_standard", True),  # With callback
-                ("Hybrid (Ours)", "adaptive", True)     # With callback
+                ("Telea", "telea", False),
+                ("Criminisi Std", "criminisi_standard", True),
+                ("Hybrid (Ours)", "adaptive", True)
             ]
             
             num_methods = len(methods)
@@ -989,9 +970,6 @@ class MangaCleanerApp:
             self.root.after(50, self._check_eval_queue)  # Faster refresh for smoother animation
     
     def _update_eval_canvas(self, image: np.ndarray):
-        """Update the evaluation canvas with a new image (for live preview).
-        Respects current zoom and pan settings from tab2_controller.
-        """
         if image is None:
             return
         
@@ -1070,7 +1048,6 @@ class MangaCleanerApp:
         images = [
             ("Input", resize(self.eval_input_image)),
             ("Telea", resize(self.eval_results.get("Telea", {}).get('result', self.eval_input_image))),
-            ("PatchMatch", resize(self.eval_results.get("PatchMatch", {}).get('result', self.eval_input_image))),
             ("Criminisi", resize(self.eval_results.get("Criminisi Std", {}).get('result', self.eval_input_image))),
             ("Hybrid", resize(self.eval_results.get("Hybrid (Ours)", {}).get('result', self.eval_input_image))),
             ("Ground Truth", resize(self.eval_ground_truth)),
@@ -1132,10 +1109,7 @@ class MangaCleanerApp:
         
         messagebox.showinfo("Berhasil", f"Hasil diekspor ke:\n{od}")
     
-    # =========================================================================
     # QUEUE CHECKER
-    # =========================================================================
-    
     def _check_queues(self):
         # Tab 1 queue
         try:

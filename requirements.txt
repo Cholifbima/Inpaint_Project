@@ -1,9 +1,5 @@
-opencv-contrib-python>=4.8.0  # Includes xphoto for PatchMatch-like inpainting
+opencv-python>=4.8.0
 numpy>=1.24.0
 numba>=0.58.0
 Pillow>=10.0.0
 scikit-image>=0.21.0
-
-# Optional: For true PatchMatch (Barnes et al. 2009)
-# pip install git+https://github.com/vacancy/PyPatchMatch
-# Note: Requires C++ compiler (Visual Studio Build Tools on Windows)
