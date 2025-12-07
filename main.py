@@ -734,18 +734,16 @@ class MangaCleanerApp:
         tk.Label(p, text="Hasil Benchmark", font=('Segoe UI', 11, 'bold'),
                 bg='#ecf0f1', fg='#2c3e50').pack(pady=(5, 5))
         
-        cols = ('method', 'time', 'psnr', 'ssim', 'sharp')
-        self.tab2_tree = ttk.Treeview(p, columns=cols, show='headings', height=5)
+        cols = ('method', 'time', 'psnr', 'ssim')
+        self.tab2_tree = ttk.Treeview(p, columns=cols, show='headings', height=4)
         self.tab2_tree.heading('method', text='Metode')
-        self.tab2_tree.heading('time', text='Time')
+        self.tab2_tree.heading('time', text='Time (s)')
         self.tab2_tree.heading('psnr', text='PSNR')
         self.tab2_tree.heading('ssim', text='SSIM')
-        self.tab2_tree.heading('sharp', text='Sharp')
-        self.tab2_tree.column('method', width=100)
-        self.tab2_tree.column('time', width=50, anchor='center')
-        self.tab2_tree.column('psnr', width=50, anchor='center')
-        self.tab2_tree.column('ssim', width=55, anchor='center')
-        self.tab2_tree.column('sharp', width=55, anchor='center')
+        self.tab2_tree.column('method', width=110)
+        self.tab2_tree.column('time', width=60, anchor='center')
+        self.tab2_tree.column('psnr', width=60, anchor='center')
+        self.tab2_tree.column('ssim', width=60, anchor='center')
         self.tab2_tree.pack(pady=5, padx=10, fill='x')
         
         # Export
@@ -899,19 +897,11 @@ class MangaCleanerApp:
                 psnr_val = calc_psnr(gt, result)
                 ssim_val = calc_ssim(gt, result, channel_axis=2, data_range=255)
                 
-                # Sharpness (Variance of Laplacian) - higher = sharper
-                def get_sharpness(img):
-                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                    return cv2.Laplacian(gray, cv2.CV_64F).var()
-                
-                sharp_val = get_sharpness(result)
-                
                 self.eval_results[name] = {
                     'result': result,
                     'time': elapsed,
                     'psnr': psnr_val,
-                    'ssim': ssim_val,
-                    'sharpness': sharp_val
+                    'ssim': ssim_val
                 }
                 
                 # Show final result for this method
@@ -923,7 +913,7 @@ class MangaCleanerApp:
                     'percent': 100.0
                 }))
                 
-                self.eval_queue.put(('result', (name, elapsed, psnr_val, ssim_val, sharp_val)))
+                self.eval_queue.put(('result', (name, elapsed, psnr_val, ssim_val)))
                 self.eval_queue.put(('method_complete', name))
             
             self.eval_queue.put(('progress', 100))
@@ -972,9 +962,9 @@ class MangaCleanerApp:
                         )
                 
                 elif t == 'result':
-                    name, elapsed, psnr_val, ssim_val, sharp_val = d
+                    name, elapsed, psnr_val, ssim_val = d
                     self.tab2_tree.insert('', 'end', values=(
-                        name, f"{elapsed:.2f}", f"{psnr_val:.2f}", f"{ssim_val:.4f}", f"{sharp_val:.1f}"
+                        name, f"{elapsed:.2f}", f"{psnr_val:.2f}", f"{ssim_val:.4f}"
                     ))
                 
                 elif t == 'complete':
@@ -1046,27 +1036,14 @@ class MangaCleanerApp:
             )
     
     def _print_markdown(self):
-        # Calculate GT sharpness as reference
-        def get_sharpness(img):
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            return cv2.Laplacian(gray, cv2.CV_64F).var()
-        
-        gt_sharpness = get_sharpness(self.eval_ground_truth)
-        
-        print("\n" + "="*80)
+        print("\n" + "="*70)
         print("BENCHMARK RESULTS (Markdown - Copy for Thesis)")
-        print("="*80)
-        print(f"\n📊 Ground Truth Sharpness (Reference): {gt_sharpness:.1f}")
-        print("\n| Metode | Waktu (s) | PSNR (dB) | SSIM | Sharpness |")
-        print("|--------|-----------|-----------|------|-----------|")
+        print("="*70)
+        print("\n| Metode | Waktu (s) | PSNR (dB) | SSIM |")
+        print("|--------|-----------|-----------|------|")
         for n, d in self.eval_results.items():
-            sharp = d.get('sharpness', 0)
-            print(f"| {n} | {d['time']:.2f} | {d['psnr']:.2f} | {d['ssim']:.4f} | {sharp:.1f} |")
-        print("\n💡 Sharpness Analysis:")
-        print("   - Higher value = Sharper/More detailed image")
-        print("   - Telea typically produces BLURRY results (low sharpness)")
-        print("   - Exemplar-based methods preserve texture better (higher sharpness)")
-        print("="*80)
+            print(f"| {n} | {d['time']:.2f} | {d['psnr']:.2f} | {d['ssim']:.4f} |")
+        print("\n" + "="*70)
     
     def _tab2_show_comparison(self):
         if not self.eval_results:
